@@ -181,6 +181,31 @@ safe; a false `blocked` stops waits and lights up the sidebar wrongly.
   the panel shows **⬡ Bob** while the canonical id stays `bob`. Override it by
   setting `HERDR_BOB_DISPLAY_NAME` in the environment Herdr launches plugins
   from, e.g. `HERDR_BOB_DISPLAY_NAME="🤖 Bobby"`.
+- **No model token.** Pi reports its model to Herdr as a custom `$model` metadata
+  token, which the agents panel renders beside the agent name. Bob exposes no
+  model name for the plugin to report, so it sets no such token -- deliberately,
+  not by omission. Every place worth looking, checked against 2.0.2:
+  - Hook payloads carry no model field. `SessionStart` sends `session_id`,
+    `cwd`, `hook_event_name` and `source`; the other events add only `prompt`,
+    the `tool_*` fields, and `last_assistant_message`.
+  - Bob selects model *tiers*, not models -- `fast`, `premium`, `ultra` and a
+    hidden `explorer`, defaulting to `premium`. Against the production gateway
+    every visible tier resolves to the same underlying model, so a tier names a
+    price band rather than a model. `/model` is not offered at all unless more
+    than one tier is unlocked.
+  - The selected tier is persisted as `_meta.modelTier` on the task snapshot in
+    `~/.bob/db/bob.db`. Reading it would add a SQLite dependency next to `jq`
+    and a second undocumented schema -- a more fragile surface than the hook
+    contract -- for a value that does not vary in practice.
+  - Nothing renders the model or the tier on screen, so `bin/bob-watch` cannot
+    read it the way it reads `blocked`. The footer shows the *mode* (`Agent`,
+    `Plan`, `Ask`), which is a different thing.
+
+  If a later Bob puts a model name in the hook payload or on the screen, this
+  becomes small: a `report-metadata --token model=...` call in `lib/common.sh`
+  beside the existing `report_display`. Note that the sidebar would still need
+  the token in the default `ui.sidebar.agents.rows`, since `rows_by_agent`
+  rejects `bob` for the reason above.
 - **Herdr cannot restore a Bob pane.** Automatic restore needs Herdr to know how
   to relaunch an agent, which it cannot for a non-native kind. The plugin records
   each pane's task id under its state directory; `status` shows them, and you can
