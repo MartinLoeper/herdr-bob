@@ -43,9 +43,11 @@ readopt() {
 case "${1:-status}" in
   start)
     mkdir -p "$(state_root)" "$(panes_dir)" "$(state_root)/heartbeat"
+    # Re-point the stable launcher at this (possibly new) plugin root.
+    write_hook_launcher "$ROOT" || log "could not refresh hook launcher"
     readopt
     if running; then echo "herdr-bob: watcher already running (pid $(cat "$PIDFILE"))"; exit 0; fi
-    setsid nohup bash "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    setsid nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
     echo $! > "$PIDFILE"
     disown 2>/dev/null || true
     echo "herdr-bob: watcher started (pid $(cat "$PIDFILE"))"
@@ -72,7 +74,7 @@ case "${1:-status}" in
     else echo "bob:      NOT on PATH"; fi
     settings="${BOB_HOME:-$HOME/.bob}/settings/settings.json"
     if [ -e "$settings" ] && command -v jq >/dev/null 2>&1 &&
-       jq -e --arg m "$ROOT/bin/bob-hook" '[.hooks // {} | .[][]? | .hooks[]? | select((.command // "") | contains($m))] | length > 0' "$settings" >/dev/null 2>&1; then
+       jq -e --arg m "$(hook_launcher)" '[.hooks // {} | .[][]? | .hooks[]? | select((.command // "") | contains($m))] | length > 0' "$settings" >/dev/null 2>&1; then
       echo "hooks:    installed in $settings"
     else
       echo "hooks:    NOT installed (run the install-hook action)"

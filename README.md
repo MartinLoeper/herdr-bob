@@ -60,6 +60,46 @@ $ herdr plugin link /path/to/herdr-bob
 $ herdr plugin action invoke mloeper.herdr-bob.install-hook
 ```
 
+### On NixOS
+
+The flake ships a package and a NixOS module that registers the plugin through
+Herdr's own registry API, so other installed plugins stay intact:
+
+```nix
+{
+  inputs.herdr-bob.url = "github:MartinLoeper/herdr-bob";
+
+  outputs = { nixpkgs, herdr-bob, ... }: {
+    nixosConfigurations.yourhost = nixpkgs.lib.nixosSystem {
+      modules = [
+        herdr-bob.nixosModules.default
+        {
+          programs.herdr-bob.enable = true;
+          programs.herdr-bob.users = [ "you" ];
+        }
+      ];
+    };
+  };
+}
+```
+
+Herdr's plugin registry is per-user, so `users` lists everyone who should get
+it. Set `programs.herdr-bob.herdrPackage` if the Herdr you run is not
+`pkgs.herdr` -- registration has to use the same Herdr, since the registry lives
+in that Herdr's config directory.
+
+After the first rebuild, run the `install-hook` action once to register the
+lifecycle bridge with Bob. You do not need to repeat it on later rebuilds: Bob's
+settings point at a stable launcher in the plugin state directory, and the
+startup hook re-points that launcher at the new store path on every upgrade.
+
+Or just install the package and link it yourself:
+
+```console
+$ nix build github:MartinLoeper/herdr-bob
+$ herdr plugin link ./result/share/herdr/plugins/herdr-bob
+```
+
 `install-hook` registers the bridge in Bob's global settings
 (`~/.bob/settings/settings.json`). It is idempotent, keeps a one-time
 `.herdr-bob.bak`, and leaves hooks you configured yourself untouched.

@@ -12,12 +12,14 @@ BOB_HOME="${BOB_HOME:-$HOME/.bob}"
 SETTINGS="$BOB_HOME/settings/settings.json"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="$(state_root)"
-MARKER="$ROOT/bin/bob-hook"
-CMD="bash \"$MARKER\" --state-dir \"$STATE\""
+MARKER="$(hook_launcher)"
+CMD="\"$MARKER\""
 
 command -v jq >/dev/null 2>&1 || { echo "herdr-bob: jq is required" >&2; exit 1; }
 
 mkdir -p "$BOB_HOME/settings" "$STATE" || exit 1
+
+write_hook_launcher "$ROOT" || { echo "herdr-bob: could not write $MARKER" >&2; exit 1; }
 
 if [ -e "$SETTINGS" ]; then
   if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then
@@ -32,7 +34,10 @@ fi
 
 tmp="$SETTINGS.herdr-bob.tmp.$$"
 jq --arg cmd "$CMD" --arg marker "$MARKER" '
-  def ours: ((.command // "") | contains($marker));
+  # Ownership test, deliberately broader than the exact marker: it also claims
+  # entries written by older versions that pointed straight at bin/bob-hook,
+  # so an upgrade cleans up after itself instead of leaving a dead duplicate.
+  def ours: ((.command // "") | test("bob-hook"));
   # Drop only our own entries, then drop groups we emptied. Groups belonging to
   # the user keep their matcher and every other field.
   def strip(ev):

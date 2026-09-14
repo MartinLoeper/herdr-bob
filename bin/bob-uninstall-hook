@@ -8,7 +8,7 @@ set -uo pipefail
 BOB_HOME="${BOB_HOME:-$HOME/.bob}"
 SETTINGS="$BOB_HOME/settings/settings.json"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MARKER="$ROOT/bin/bob-hook"
+MARKER="$(hook_launcher)"
 
 command -v jq >/dev/null 2>&1 || { echo "herdr-bob: jq is required" >&2; exit 1; }
 [ -e "$SETTINGS" ] || { echo "herdr-bob: no $SETTINGS, nothing to do"; exit 0; }
@@ -16,7 +16,10 @@ jq -e . "$SETTINGS" >/dev/null 2>&1 || { echo "herdr-bob: $SETTINGS is not valid
 
 tmp="$SETTINGS.herdr-bob.tmp.$$"
 jq --arg marker "$MARKER" '
-  def ours: ((.command // "") | contains($marker));
+  # Ownership test, deliberately broader than the exact marker: it also claims
+  # entries written by older versions that pointed straight at bin/bob-hook,
+  # so an upgrade cleans up after itself instead of leaving a dead duplicate.
+  def ours: ((.command // "") | test("bob-hook"));
   if .hooks == null then .
   else .hooks |= with_entries(
          .value |= ( map(.hooks |= map(select(ours | not)))
@@ -27,5 +30,6 @@ jq --arg marker "$MARKER" '
 ' "$SETTINGS" > "$tmp" || { rm -f "$tmp"; echo "herdr-bob: failed to update settings" >&2; exit 1; }
 
 mv "$tmp" "$SETTINGS"
+rm -f "$MARKER" 2>/dev/null
 echo "herdr-bob: hooks removed from $SETTINGS"
 log "uninstall-hook -> $SETTINGS"
