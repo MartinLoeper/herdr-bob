@@ -49,9 +49,32 @@ have exactly one authority.
 ## Requirements
 
 - Herdr 0.9.0 or newer
-- `bob` on `PATH` — see [ibm-bob-shell](https://github.com/MartinLoeper/ibm-bob-shell)
-  for a Nix flake, or IBM's own installer
+- IBM Bob Shell on `PATH` as `bob` — see
+  [ibm-bob-shell](https://github.com/MartinLoeper/ibm-bob-shell) for a Nix flake,
+  or IBM's own installer
 - `jq`
+
+### Versions this was built and verified against
+
+| | Version |
+| --- | --- |
+| IBM Bob Shell | **2.0.2** (commit `a31a75e3`, released 2026-08-31) |
+| Herdr | **0.9.0** (protocol 22) |
+
+Version matters more here than for a typical plugin, because two of the surfaces
+this integration reads are not ones IBM documents as stable. If state stops
+tracking after an upgrade, suspect these first:
+
+- **The hook contract** — the event names `SessionStart`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse` and `Stop`, the `hooks` schema in
+  `~/.bob/settings/settings.json`, and the `hook_event_name` / `session_id`
+  fields in the JSON Bob sends on stdin.
+- **The screen shapes** in `rules.json`, which is the only way `blocked` can be
+  detected because Bob has no approval hook event. A redesigned prompt will not
+  break Bob, it will just stop showing up as `blocked` in Herdr.
+
+`herdr plugin action invoke mloeper.herdr-bob.status` reports the `bob` on `PATH`
+and its version, so it is easy to see what you are actually running.
 
 ## Install
 
