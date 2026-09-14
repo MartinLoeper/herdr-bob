@@ -229,3 +229,12 @@ $ herdr server reload-config   # after adding a bob key; expect "unknown canonic
   older versions. Changing it to an exact match will strand them.
 - `rules.json` in the repo is a seed. The live copy is in the plugin config
   directory; edit that when tuning, and fold anything durable back into the repo.
+- Pane adoption in `bin/bob-watch` matches `argv[0]`/`argv[1]` per element, never
+  the whole command line. Bob is a Node bundle, so `argv[0]` is the interpreter
+  and `argv[1]` the script, and `BOB_INTERPRETER_REGEX` has to match before
+  `argv[1]` is trusted. Widening this back to `cmdline` claims any pane that only
+  *mentions* Bob's path — a `grep` over the bundle, an editor with it open — and
+  a wrongly claimed pane does not heal by itself: `release-agent` leaves it
+  `unknown` until `herdr server reload-agent-manifests` runs. Note that
+  `adopt_unclaimed` only ever considers panes Herdr reports with `agent == null`,
+  so the window for a false claim is the moment before native detection lands.

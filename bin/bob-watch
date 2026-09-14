@@ -28,18 +28,40 @@ declare -A last_state=()
 # Bob only fires SessionStart on the first prompt, so a freshly launched
 # `bob chat` is invisible to Herdr until the user says something. Claim such
 # panes by their foreground process instead, and the agent shows up at once.
-BOB_PROCESS_REGEX="${BOB_PROCESS_REGEX:-(^|/)bob(\\.js)?([[:space:]]|$)|bobshell}"
+#
+# Both patterns match one argv element end-to-end, never a whole command line.
+# Matching the command line claims any pane that merely *mentions* Bob's path --
+# a grep over the bundle, an editor opening it -- and a mis-claimed pane does not
+# recover on its own: `herdr pane release-agent` leaves it `unknown` until
+# `herdr server reload-agent-manifests` runs.
+BOB_PROCESS_REGEX="${BOB_PROCESS_REGEX:-(^|/)bob(shell)?(\\.js)?$}"
+BOB_INTERPRETER_REGEX="${BOB_INTERPRETER_REGEX:-(^|/)node(js)?$}"
 ADOPT_EVERY="${BOB_ADOPT_EVERY:-3}"
 
+# True when a foreground process in the pane *is* Bob. Bob ships as a Node
+# bundle, so argv[0] is the interpreter and argv[1] the script; only a packaged
+# launcher puts Bob itself in argv[0]. Requiring the interpreter before trusting
+# argv[1] keeps `vim bob.js` from being read as a running agent.
+pane_runs_bob() { # pane
+  local argv0 argv1
+  while IFS=$'\t' read -r argv0 argv1; do
+    [ -n "$argv0" ] || continue
+    printf '%s' "$argv0" | grep -qiE "$BOB_PROCESS_REGEX" && return 0
+    printf '%s' "$argv0" | grep -qiE "$BOB_INTERPRETER_REGEX" || continue
+    [ -n "$argv1" ] || continue
+    printf '%s' "$argv1" | grep -qiE "$BOB_PROCESS_REGEX" && return 0
+  done < <("$HERDR" pane process-info --pane "$1" 2>/dev/null \
+          | jq -r '.result.process_info.foreground_processes[]?
+                   | [(.argv[0]? // ""), (.argv[1]? // "")] | @tsv' 2>/dev/null)
+  return 1
+}
+
 adopt_unclaimed() {
-  local p cmd
+  local p
   while read -r p; do
     [ -n "$p" ] || continue
     [ -e "$(pane_file "$p")" ] && continue
-    cmd="$("$HERDR" pane process-info --pane "$p" 2>/dev/null \
-          | jq -r '.result.process_info.foreground_processes[]?.cmdline // empty' 2>/dev/null)"
-    [ -n "$cmd" ] || continue
-    printf '%s\n' "$cmd" | grep -qiE "$BOB_PROCESS_REGEX" || continue
+    pane_runs_bob "$p" || continue
     register_pane "$p" ""
     report_state "$p" "idle"
     report_display "$p"
