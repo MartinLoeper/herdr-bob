@@ -46,6 +46,12 @@ matches `rules.json` against the screen to report `blocked`. While a hook
 heartbeat is fresh the watcher never touches `idle`/`working`, so those always
 have exactly one authority.
 
+Bob also fires `SessionStart` on the first prompt rather than at launch, so a
+`bob chat` you started yourself is invisible until you say something. The watcher
+claims such panes by their foreground process, so they appear straight away.
+Panes started through the `start` action are claimed immediately and do not wait
+for either.
+
 ## Requirements
 
 - Herdr 0.9.0 or newer

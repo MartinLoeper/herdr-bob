@@ -25,6 +25,28 @@ mkdir -p "$(config_root)" "$(panes_dir)" "$(state_root)/heartbeat" 2>/dev/null
 
 declare -A last_state=()
 
+# Bob only fires SessionStart on the first prompt, so a freshly launched
+# `bob chat` is invisible to Herdr until the user says something. Claim such
+# panes by their foreground process instead, and the agent shows up at once.
+BOB_PROCESS_REGEX="${BOB_PROCESS_REGEX:-(^|/)bob(\\.js)?([[:space:]]|$)|bobshell}"
+ADOPT_EVERY="${BOB_ADOPT_EVERY:-3}"
+
+adopt_unclaimed() {
+  local p cmd
+  while read -r p; do
+    [ -n "$p" ] || continue
+    [ -e "$(pane_file "$p")" ] && continue
+    cmd="$("$HERDR" pane process-info --pane "$p" 2>/dev/null \
+          | jq -r '.result.process_info.foreground_processes[]?.cmdline // empty' 2>/dev/null)"
+    [ -n "$cmd" ] || continue
+    printf '%s\n' "$cmd" | grep -qiE "$BOB_PROCESS_REGEX" || continue
+    register_pane "$p" ""
+    report_state "$p" "idle"
+    report_display "$p"
+    log "adopted hand-started bob in $p"
+  done < <("$HERDR" pane list 2>/dev/null | jq -r '.result.panes[]? | select(.agent == null) | .pane_id' 2>/dev/null)
+}
+
 heartbeat_fresh() { # pane
   local f; f="$(beat_file "$1")"
   [ -e "$f" ] || return 1
@@ -71,7 +93,13 @@ match_rules() { # screen-text
 log "watch started (interval ${INTERVAL}s, rules $RULES)"
 trap 'log "watch stopping"; exit 0' TERM INT
 
+cycle=0
 while :; do
+  cycle=$(( cycle + 1 ))
+  # Cheaper than the per-pane screen read, but still two CLI calls per unknown
+  # pane, so do not run it every tick.
+  [ $(( cycle % ADOPT_EVERY )) -eq 0 ] && adopt_unclaimed
+
   shopt -s nullglob
   for f in "$(panes_dir)"/*; do
     pane="$(basename "$f")"

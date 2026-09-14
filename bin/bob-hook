@@ -43,7 +43,17 @@ pane="$HERDR_PANE_ID"
 
 # Claim the pane and record the task id so the plugin can resume it later --
 # Herdr cannot restore a non-native agent kind itself.
+first_sighting=0
+[ -e "$(pane_file "$pane")" ] || first_sighting=1
 register_pane "$pane" "$session"
+
+# Bob started by hand reaches Herdr only through this bridge, so the display
+# name has to be set here too -- not just in bob-start. Without it the pane
+# shows a bare `bob` and the sidebar colour rule, which keys on the glyph,
+# never matches.
+if [ "$first_sighting" = 1 ] || [ "$event" = "SessionStart" ]; then
+  report_display "$pane"
+fi
 mkdir -p "$(dirname "$(beat_file "$pane")")" 2>/dev/null && : > "$(beat_file "$pane")"
 
 report_state "$pane" "$state" "$session"
