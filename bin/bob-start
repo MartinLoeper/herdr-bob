@@ -45,8 +45,7 @@ fi
 # Claim it before Bob has drawn anything, so the panel shows Bob starting up.
 register_pane "$pane" ""
 report_state "$pane" "working"
-"$HERDR" pane report-metadata "$pane" --source "$SOURCE_ID" --agent "$AGENT_LABEL" \
-  --display-agent "Bob" --seq "$(next_seq)" >/dev/null 2>&1
+report_display "$pane"
 
 # A unique, addressable name: bob, bob-2, bob-3 ...
 taken="$("$HERDR" agent list 2>/dev/null | jq -r '.result.agents[].name // empty')"

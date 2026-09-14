@@ -29,8 +29,7 @@ readopt() {
     task="$(cat "$f" 2>/dev/null)"
     if pane_alive "$pane"; then
       report_state "$pane" "idle" "$task"
-      "$HERDR" pane report-metadata "$pane" --source "$SOURCE_ID" --agent "$AGENT_LABEL" \
-        --display-agent "Bob" --seq "$(next_seq)" >/dev/null 2>&1
+      report_display "$pane"
       log "re-adopted pane $pane (task ${task:-none})"
     else
       forget_pane "$pane"

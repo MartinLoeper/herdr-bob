@@ -1,7 +1,7 @@
 # herdr-bob
 
 A [Herdr](https://herdr.dev) plugin that makes **IBM Bob Shell** (`bob`) a
-first-class agent in Herdr's agent panel, alongside Claude Code, Codex and Pi —
+first-class agent in Herdr's agent panel, alongside Claude Code, Codex and Pi â
 with live `idle` / `working` / `blocked` state.
 
 > **Not affiliated with, endorsed by, or supported by IBM.** IBM and Bob are
@@ -18,7 +18,7 @@ with live `idle` / `working` / `blocked` state.
 
 Herdr's agent *kinds* are compiled into its binary, and the documentation is
 explicit that "adding a completely new agent still requires a Herdr binary
-update". A local detection manifest cannot register a new agent — it only
+update". A local detection manifest cannot register a new agent â it only
 patches agents Herdr already knows.
 
 So this plugin takes the route Herdr documents for third-party agents under
@@ -28,7 +28,7 @@ authority. The same mechanism OMP uses.
 
 ## How state is determined
 
-Two signals, covering **disjoint** gaps — not redundancy.
+Two signals, covering **disjoint** gaps â not redundancy.
 
 Bob has a Claude-Code-shaped hook system with five events, and `bin/bob-hook`
 maps them to Herdr states:
@@ -38,7 +38,7 @@ maps them to Herdr states:
 | `SessionStart` | `idle` (and records the task id) |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` / `PostToolUse` | `working` |
-| `Stop` | `idle` — Herdr shows this as `done` until you view it |
+| `Stop` | `idle` â Herdr shows this as `done` until you view it |
 
 Bob has **no approval or notification event**, so a tool-approval prompt is
 invisible to the hooks. `bin/bob-watch` therefore polls registered Bob panes and
@@ -49,7 +49,7 @@ have exactly one authority.
 ## Requirements
 
 - Herdr 0.9.0 or newer
-- IBM Bob Shell on `PATH` as `bob` — see
+- IBM Bob Shell on `PATH` as `bob` â see
   [ibm-bob-shell](https://github.com/MartinLoeper/ibm-bob-shell) for a Nix flake,
   or IBM's own installer
 - `jq`
@@ -65,7 +65,7 @@ Version matters more here than for a typical plugin, because two of the surfaces
 this integration reads are not ones IBM documents as stable. If state stops
 tracking after an upgrade, suspect these first:
 
-- **The hook contract** — the event names `SessionStart`, `UserPromptSubmit`,
+- **The hook contract** â the event names `SessionStart`, `UserPromptSubmit`,
   `PreToolUse`, `PostToolUse` and `Stop`, the `hooks` schema in
   `~/.bob/settings/settings.json`, and the `hook_event_name` / `session_id`
   fields in the JSON Bob sends on stdin.
@@ -170,8 +170,11 @@ safe; a false `blocked` stops waits and lights up the sidebar wrongly.
 ## Known limits
 
 - **No custom sidebar row.** `ui.sidebar.agents.rows_by_agent` is keyed by strict
-  canonical agent id and rejects `bob`. The plugin sets a `display_agent` of
-  `Bob` instead, and the default agent row is used.
+  canonical agent id and rejects `bob`, so there is no per-agent colour or row
+  layout. The plugin sets a `display_agent` instead, which Herdr stores verbatim:
+  the panel shows **⬡ Bob** while the canonical id stays `bob`. Override it by
+  setting `HERDR_BOB_DISPLAY_NAME` in the environment Herdr launches plugins
+  from, e.g. `HERDR_BOB_DISPLAY_NAME="🤖 Bobby"`.
 - **Herdr cannot restore a Bob pane.** Automatic restore needs Herdr to know how
   to relaunch an agent, which it cannot for a non-native kind. The plugin records
   each pane's task id under its state directory; `status` shows them, and you can

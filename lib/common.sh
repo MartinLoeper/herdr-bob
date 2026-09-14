@@ -22,6 +22,9 @@ esac
 
 PLUGIN_ID="mloeper.herdr-bob"
 AGENT_LABEL="bob"
+# Shown in the Agents panel. Herdr stores it verbatim, glyph and all -- the
+# canonical id stays `bob`, since rows_by_agent rejects anything non-native.
+DISPLAY_NAME="${HERDR_BOB_DISPLAY_NAME:-⬡ Bob}"
 SOURCE_ID="plugin:${PLUGIN_ID}"
 
 herdr_bin() { printf '%s' "${HERDR_BIN_PATH:-herdr}"; }
@@ -105,4 +108,10 @@ write_hook_launcher() { # plugin-root
 exec "$HERDR_BOB_BASH" "$root/bin/bob-hook" --state-dir "$(state_root)" "\$@"
 EOF
   chmod +x "$tmp" && mv "$tmp" "$launcher"
+}
+
+report_display() { # pane
+  "$(herdr_bin)" pane report-metadata "$1" \
+    --source "$SOURCE_ID" --agent "$AGENT_LABEL" \
+    --display-agent "$DISPLAY_NAME" --seq "$(next_seq)" >/dev/null 2>&1
 }
