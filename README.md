@@ -1,7 +1,7 @@
 # herdr-bob
 
 A [Herdr](https://herdr.dev) plugin that makes **IBM Bob Shell** (`bob`) a
-first-class agent in Herdr's agent panel, alongside Claude Code, Codex and Pi â
+first-class agent in Herdr's agent panel, alongside Claude Code, Codex and Pi —
 with live `idle` / `working` / `blocked` state.
 
 > **Not affiliated with, endorsed by, or supported by IBM.** IBM and Bob are
@@ -18,7 +18,7 @@ with live `idle` / `working` / `blocked` state.
 
 Herdr's agent *kinds* are compiled into its binary, and the documentation is
 explicit that "adding a completely new agent still requires a Herdr binary
-update". A local detection manifest cannot register a new agent â it only
+update". A local detection manifest cannot register a new agent — it only
 patches agents Herdr already knows.
 
 So this plugin takes the route Herdr documents for third-party agents under
@@ -28,7 +28,7 @@ authority. The same mechanism OMP uses.
 
 ## How state is determined
 
-Two signals, covering **disjoint** gaps â not redundancy.
+Two signals, covering **disjoint** gaps — not redundancy.
 
 Bob has a Claude-Code-shaped hook system with five events, and `bin/bob-hook`
 maps them to Herdr states:
@@ -38,7 +38,7 @@ maps them to Herdr states:
 | `SessionStart` | `idle` (and records the task id) |
 | `UserPromptSubmit` | `working` |
 | `PreToolUse` / `PostToolUse` | `working` |
-| `Stop` | `idle` â Herdr shows this as `done` until you view it |
+| `Stop` | `idle` — Herdr shows this as `done` until you view it |
 
 Bob has **no approval or notification event**, so a tool-approval prompt is
 invisible to the hooks. `bin/bob-watch` therefore polls registered Bob panes and
@@ -55,7 +55,7 @@ for either.
 ## Requirements
 
 - Herdr 0.9.0 or newer
-- IBM Bob Shell on `PATH` as `bob` â see
+- IBM Bob Shell on `PATH` as `bob` — see
   [ibm-bob-shell](https://github.com/MartinLoeper/ibm-bob-shell) for a Nix flake,
   or IBM's own installer
 - `jq`
@@ -71,7 +71,7 @@ Version matters more here than for a typical plugin, because two of the surfaces
 this integration reads are not ones IBM documents as stable. If state stops
 tracking after an upgrade, suspect these first:
 
-- **The hook contract** â the event names `SessionStart`, `UserPromptSubmit`,
+- **The hook contract** — the event names `SessionStart`, `UserPromptSubmit`,
   `PreToolUse`, `PostToolUse` and `Stop`, the `hooks` schema in
   `~/.bob/settings/settings.json`, and the `hook_event_name` / `session_id`
   fields in the JSON Bob sends on stdin.
@@ -114,7 +114,7 @@ Herdr's own registry API, so other installed plugins stay intact:
 
 Herdr's plugin registry is per-user, so `users` lists everyone who should get
 it. Set `programs.herdr-bob.herdrPackage` if the Herdr you run is not
-`pkgs.herdr` -- registration has to use the same Herdr, since the registry lives
+`pkgs.herdr` — registration has to use the same Herdr, since the registry lives
 in that Herdr's config directory.
 
 After the first rebuild, run the `install-hook` action once to register the
@@ -183,20 +183,20 @@ safe; a false `blocked` stops waits and lights up the sidebar wrongly.
   from, e.g. `HERDR_BOB_DISPLAY_NAME="🤖 Bobby"`.
 - **No model token.** Pi reports its model to Herdr as a custom `$model` metadata
   token, which the agents panel renders beside the agent name. Bob exposes no
-  model name for the plugin to report, so it sets no such token -- deliberately,
+  model name for the plugin to report, so it sets no such token — deliberately,
   not by omission. Every place worth looking, checked against 2.0.2:
   - Hook payloads carry no model field. `SessionStart` sends `session_id`,
     `cwd`, `hook_event_name` and `source`; the other events add only `prompt`,
     the `tool_*` fields, and `last_assistant_message`.
-  - Bob selects model *tiers*, not models -- `fast`, `premium`, `ultra` and a
+  - Bob selects model *tiers*, not models — `fast`, `premium`, `ultra` and a
     hidden `explorer`, defaulting to `premium`. Against the production gateway
     every visible tier resolves to the same underlying model, so a tier names a
     price band rather than a model. `/model` is not offered at all unless more
     than one tier is unlocked.
   - The selected tier is persisted as `_meta.modelTier` on the task snapshot in
     `~/.bob/db/bob.db`. Reading it would add a SQLite dependency next to `jq`
-    and a second undocumented schema -- a more fragile surface than the hook
-    contract -- for a value that does not vary in practice.
+    and a second undocumented schema — a more fragile surface than the hook
+    contract — for a value that does not vary in practice.
   - Nothing renders the model or the tier on screen, so `bin/bob-watch` cannot
     read it the way it reads `blocked`. The footer shows the *mode* (`Agent`,
     `Plan`, `Ask`), which is a different thing.
