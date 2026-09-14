@@ -1,0 +1,39 @@
+{
+  "_comment": [
+    "Screen rules for the ONE state Bob's hooks cannot report: blocked.",
+    "Bob has no approval/Notification hook event, so a tool-approval prompt is",
+    "invisible to the lifecycle bridge and has to be read off the pane.",
+    "Rules are matched, in order, against the bottom of the pane buffer.",
+    "Keep them strict: an unmatched screen falls back to the hook's state, which",
+    "is safe; a false `blocked` stops waits and lights up the sidebar wrongly.",
+    "`all` entries must every one match; `any` needs one; `none` must not match.",
+    "Patterns are POSIX extended regexes, matched case-insensitively."
+  ],
+  "rules": [
+    {
+      "id": "tool_approval_prompt",
+      "state": "blocked",
+      "all": ["(allow|approve|permission|run this command|wants to)"],
+      "any": ["\\(y(es)?/n(o)?\\)", "[[:space:]]*[>❯][[:space:]]*(yes|allow|approve)", "esc to (cancel|reject)"],
+      "none": ["esc to interrupt"]
+    },
+    {
+      "id": "trust_folder_prompt",
+      "state": "blocked",
+      "all": ["(trust|do you trust)"],
+      "any": ["this (folder|workspace|directory)", "\\(y(es)?/n(o)?\\)"]
+    },
+    {
+      "id": "license_prompt",
+      "state": "blocked",
+      "all": ["licen[sc]e"],
+      "any": ["accept", "agree", "\\(y(es)?/n(o)?\\)"]
+    },
+    {
+      "id": "sso_login_prompt",
+      "state": "blocked",
+      "all": ["(sign in|log in|login|authenticate)"],
+      "any": ["browser", "https?://", "press enter"]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+id = "mloeper.herdr-bob"
+name = "IBM Bob"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Run IBM Bob Shell as a first-class Herdr agent"
+platforms = ["linux", "macos"]
+
+# Re-adopt Bob panes that survived a server restart, and start the watcher.
+[[startup]]
+command = ["bash", "bin/bob-watchctl", "start"]
+
+[[actions]]
+id = "start"
+title = "Start IBM Bob here"
+contexts = ["workspace"]
+command = ["bash", "bin/bob-start"]
+
+[[actions]]
+id = "install-hook"
+title = "Install Bob lifecycle hooks"
+contexts = ["workspace"]
+command = ["bash", "bin/bob-install-hook"]
+
+[[actions]]
+id = "uninstall-hook"
+title = "Remove Bob lifecycle hooks"
+contexts = ["workspace"]
+command = ["bash", "bin/bob-uninstall-hook"]
+
+[[actions]]
+id = "status"
+title = "Bob integration status"
+contexts = ["workspace"]
+command = ["bash", "bin/bob-watchctl", "status"]
+
+# Drop panes that have gone away, so we stop polling them.
+[[events]]
+on = "pane.exited"
+command = ["bash", "bin/bob-watchctl", "reap"]

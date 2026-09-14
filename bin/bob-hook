@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Bob lifecycle hook bridge.
+#
+# Bob runs this for SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and
+# Stop, with the event JSON on stdin. It is registered by bin/bob-install-hook,
+# which bakes in --state-dir because Bob does not pass Herdr's plugin env.
+#
+# This script must ALWAYS exit 0. Bob treats exit code 2 as "block this turn",
+# and any other non-zero exit is logged as a hook failure. A broken integration
+# must never be able to wedge the agent.
+
+payload=$(cat 2>/dev/null)   # always drain stdin, even if we bail immediately
+
+state_dir=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --state-dir) state_dir="${2:-}"; shift 2 || break ;;
+    *) shift ;;
+  esac
+done
+[ -n "$state_dir" ] && export HERDR_BOB_STATE_DIR="$state_dir"
+
+# shellcheck source=../lib/common.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh" 2>/dev/null || exit 0
+
+# Outside Herdr this is a silent no-op, which keeps `bob chat` usable anywhere.
+[ "${HERDR_ENV:-}" = "1" ] || exit 0
+[ -n "${HERDR_PANE_ID:-}" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+event=$(printf '%s' "$payload" | jq -r '.hook_event_name // empty' 2>/dev/null)
+session=$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)
+[ -n "$event" ] || exit 0
+
+case "$event" in
+  SessionStart)                           state="idle" ;;
+  UserPromptSubmit|PreToolUse|PostToolUse) state="working" ;;
+  Stop)                                   state="idle" ;;
+  *) exit 0 ;;
+esac
+
+pane="$HERDR_PANE_ID"
+
+# Claim the pane and record the task id so the plugin can resume it later --
+# Herdr cannot restore a non-native agent kind itself.
+register_pane "$pane" "$session"
+mkdir -p "$(dirname "$(beat_file "$pane")")" 2>/dev/null && : > "$(beat_file "$pane")"
+
+report_state "$pane" "$state" "$session"
+log "hook $event -> $state pane=$pane session=${session:-none}"
+
+exit 0

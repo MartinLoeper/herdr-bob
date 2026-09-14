@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Watches registered Bob panes for the one state the hooks cannot see.
+#
+# Division of labour:
+#   - The hook bridge owns idle/working. While its heartbeat is fresh, this
+#     process never reports those, so there is only ever one authority for them.
+#   - Bob has no approval hook event, so `blocked` can only be read off the
+#     screen. That is this process's job.
+#   - It also releases panes that have gone away.
+set -uo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+HERDR="$(herdr_bin)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INTERVAL="${BOB_WATCH_INTERVAL:-2}"
+LINES="${BOB_WATCH_LINES:-40}"
+
+# User-tunable copy of the rules, seeded once. HERDR_PLUGIN_ROOT is a managed
+# checkout for GitHub installs, so durable config must not live there.
+RULES="$(config_root)/rules.json"
+mkdir -p "$(config_root)" "$(panes_dir)" "$(state_root)/heartbeat" 2>/dev/null
+[ -e "$RULES" ] || cp "$ROOT/rules.json" "$RULES" 2>/dev/null
+[ -e "$RULES" ] || RULES="$ROOT/rules.json"
+
+declare -A last_state=()
+
+heartbeat_fresh() { # pane
+  local f; f="$(beat_file "$1")"
+  [ -e "$f" ] || return 1
+  local age=$(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) ))
+  [ "$age" -lt "$HEARTBEAT_TTL" ]
+}
+
+# Returns the id of the first matching rule, or nothing.
+match_rules() { # screen-text
+  local screen=$1 n i id
+  n=$(jq -r '.rules | length' "$RULES" 2>/dev/null) || return 1
+  for (( i=0; i<n; i++ )); do
+    id=$(jq -r ".rules[$i].id" "$RULES")
+    local ok=1 pat
+    while IFS= read -r pat; do
+      [ -z "$pat" ] && continue
+      grep -qiE -- "$pat" <<<"$screen" || { ok=0; break; }
+    done < <(jq -r ".rules[$i].all // [] | .[]" "$RULES")
+    [ "$ok" = 1 ] || continue
+
+    local anys any_ok=1
+    anys=$(jq -r ".rules[$i].any // [] | length" "$RULES")
+    if [ "$anys" -gt 0 ]; then
+      any_ok=0
+      while IFS= read -r pat; do
+        [ -z "$pat" ] && continue
+        grep -qiE -- "$pat" <<<"$screen" && { any_ok=1; break; }
+      done < <(jq -r ".rules[$i].any // [] | .[]" "$RULES")
+    fi
+    [ "$any_ok" = 1 ] || continue
+
+    local none_hit=0
+    while IFS= read -r pat; do
+      [ -z "$pat" ] && continue
+      grep -qiE -- "$pat" <<<"$screen" && { none_hit=1; break; }
+    done < <(jq -r ".rules[$i].none // [] | .[]" "$RULES")
+    [ "$none_hit" = 0 ] || continue
+
+    printf '%s' "$id"; return 0
+  done
+  return 1
+}
+
+log "watch started (interval ${INTERVAL}s, rules $RULES)"
+trap 'log "watch stopping"; exit 0' TERM INT
+
+while :; do
+  shopt -s nullglob
+  for f in "$(panes_dir)"/*; do
+    pane="$(basename "$f")"
+
+    if ! pane_alive "$pane"; then
+      release_agent "$pane"; forget_pane "$pane"
+      unset "last_state[$pane]"
+      log "pane $pane gone -> released"
+      continue
+    fi
+
+    # `pane read` writes the screen as plain text, not JSON.
+    screen="$("$HERDR" pane read "$pane" --source recent-unwrapped --lines "$LINES" 2>/dev/null)"
+    [ -n "$screen" ] || continue
+
+    if rule="$(match_rules "$screen")"; then
+      if [ "${last_state[$pane]:-}" != "blocked" ]; then
+        report_state "$pane" "blocked" "" "Bob is waiting for input ($rule)"
+        last_state[$pane]="blocked"
+        log "pane $pane -> blocked ($rule)"
+      fi
+    elif [ "${last_state[$pane]:-}" = "blocked" ]; then
+      # The prompt cleared. Hand authority back: if the hook is live it will set
+      # the real state on its next event; otherwise fall back to idle.
+      last_state[$pane]=""
+      if ! heartbeat_fresh "$pane"; then
+        report_state "$pane" "idle"
+        log "pane $pane -> idle (block cleared, no live hook)"
+      else
+        log "pane $pane block cleared, deferring to hook"
+      fi
+    fi
+  done
+  shopt -u nullglob
+  sleep "$INTERVAL"
+done

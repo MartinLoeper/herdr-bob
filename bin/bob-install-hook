@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Register the lifecycle bridge in Bob's *global* settings, so every `bob chat`
+# reports to Herdr regardless of which workspace it runs in.
+#
+# Idempotent: re-running replaces our own entries and leaves any hooks the user
+# configured themselves untouched.
+set -uo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+BOB_HOME="${BOB_HOME:-$HOME/.bob}"
+SETTINGS="$BOB_HOME/settings/settings.json"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE="$(state_root)"
+MARKER="$ROOT/bin/bob-hook"
+CMD="bash \"$MARKER\" --state-dir \"$STATE\""
+
+command -v jq >/dev/null 2>&1 || { echo "herdr-bob: jq is required" >&2; exit 1; }
+
+mkdir -p "$BOB_HOME/settings" "$STATE" || exit 1
+
+if [ -e "$SETTINGS" ]; then
+  if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then
+    echo "herdr-bob: $SETTINGS is not valid JSON; refusing to touch it" >&2
+    exit 1
+  fi
+  # One backup, kept from the first install so the pre-plugin state is recoverable.
+  [ -e "$SETTINGS.herdr-bob.bak" ] || cp "$SETTINGS" "$SETTINGS.herdr-bob.bak"
+else
+  echo '{}' > "$SETTINGS"
+fi
+
+tmp="$SETTINGS.herdr-bob.tmp.$$"
+jq --arg cmd "$CMD" --arg marker "$MARKER" '
+  def ours: ((.command // "") | contains($marker));
+  # Drop only our own entries, then drop groups we emptied. Groups belonging to
+  # the user keep their matcher and every other field.
+  def strip(ev):
+    (.hooks[ev] // [])
+    | map(.hooks |= map(select(ours | not)))
+    | map(select((.hooks | length) > 0));
+  def install(ev):
+    .hooks[ev] = (strip(ev) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}]);
+  .hooks = (.hooks // {})
+  | install("SessionStart")
+  | install("UserPromptSubmit")
+  | install("PreToolUse")
+  | install("PostToolUse")
+  | install("Stop")
+' "$SETTINGS" > "$tmp" || { rm -f "$tmp"; echo "herdr-bob: failed to update settings" >&2; exit 1; }
+
+mv "$tmp" "$SETTINGS"
+
+echo "herdr-bob: hooks installed in $SETTINGS"
+jq -r '.hooks | to_entries[] | "  \(.key): \(.value | length) group(s)"' "$SETTINGS"
+echo "Restart any running \`bob chat\` for the hooks to take effect."
+log "install-hook -> $SETTINGS"

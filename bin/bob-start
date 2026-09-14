@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Open a sibling pane and launch `bob chat` in it, then claim the pane as a Bob
+# agent so it appears in the Agents panel immediately -- rather than only after
+# Bob's first hook fires.
+#
+# Herdr runs plugin commands with the PLUGIN directory as cwd, so the workspace
+# directory has to come from the invocation context, never from $PWD.
+set -uo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+HERDR="$(herdr_bin)"
+command -v jq >/dev/null 2>&1 || { echo "herdr-bob: jq is required" >&2; exit 1; }
+command -v bob >/dev/null 2>&1 || { echo "herdr-bob: \`bob\` is not on PATH" >&2; exit 1; }
+
+ctx="${HERDR_PLUGIN_CONTEXT_JSON:-{\}}"
+ctx_get() { printf '%s' "$ctx" | jq -r "$1 // empty" 2>/dev/null; }
+
+# Anchor pane: the caller's, else whatever the context says is focused.
+anchor="${HERDR_PANE_ID:-}"
+[ -n "$anchor" ] || anchor="$(ctx_get '.focused_pane.pane_id // .pane.pane_id // .pane_id')"
+if [ -z "$anchor" ]; then
+  echo "herdr-bob: no pane to split from" >&2; exit 1
+fi
+
+# Working directory for the new pane, in decreasing order of specificity.
+cwd="$(ctx_get '.focused_pane.cwd // .pane.cwd // .workspace.cwd // .cwd')"
+[ -n "$cwd" ] || cwd="$("$HERDR" pane get "$anchor" 2>/dev/null | jq -r '.result.pane.cwd // empty')"
+[ -n "$cwd" ] || cwd="$HOME"
+
+# Herdr's own convention: split a wide pane to the right, a tall or narrow one down.
+dir="${BOB_SPLIT_DIRECTION:-}"
+if [ -z "$dir" ]; then
+  read -r w h <<<"$("$HERDR" pane layout --pane "$anchor" 2>/dev/null \
+    | jq -r --arg p "$anchor" '.result.layout.panes[] | select(.pane_id==$p) | "\(.rect.width) \(.rect.height)"')"
+  if [ -n "${w:-}" ] && [ "${w:-0}" -ge $(( ${h:-1} * 3 )) ]; then dir="right"; else dir="down"; fi
+fi
+
+pane="$("$HERDR" pane split "$anchor" --direction "$dir" --cwd "$cwd" \
+        --env HERDR_BOB=1 --no-focus 2>/dev/null | jq -r '.result.pane.pane_id // empty')"
+if [ -z "$pane" ]; then
+  echo "herdr-bob: pane split failed" >&2; exit 1
+fi
+
+# Claim it before Bob has drawn anything, so the panel shows Bob starting up.
+register_pane "$pane" ""
+report_state "$pane" "working"
+"$HERDR" pane report-metadata "$pane" --source "$SOURCE_ID" --agent "$AGENT_LABEL" \
+  --display-agent "Bob" --seq "$(next_seq)" >/dev/null 2>&1
+
+# A unique, addressable name: bob, bob-2, bob-3 ...
+taken="$("$HERDR" agent list 2>/dev/null | jq -r '.result.agents[].name // empty')"
+name="bob"; n=2
+while printf '%s\n' "$taken" | grep -qx "$name"; do name="bob-$n"; n=$((n + 1)); done
+"$HERDR" agent rename "$pane" "$name" >/dev/null 2>&1
+
+"$HERDR" pane run "$pane" "${BOB_COMMAND:-bob chat}" >/dev/null 2>&1
+
+echo "herdr-bob: started $name in $pane ($dir of $anchor, cwd $cwd)"
+log "start pane=$pane name=$name dir=$dir cwd=$cwd"

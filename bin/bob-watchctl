@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# start | stop | status | reap  for the watcher.
+#
+# `start` is what the manifest's [[startup]] hook runs. Herdr describes startup
+# hooks as one-shot initialisation rather than supervised daemons, so this
+# detaches the watcher and returns immediately.
+set -uo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIDFILE="$(state_root)/watch.pid"
+HERDR="$(herdr_bin)"
+
+running() {
+  [ -e "$PIDFILE" ] || return 1
+  local pid; pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+# Panes that outlived a server restart: re-claim any that still run Bob, and
+# forget the rest. Herdr cannot restore a non-native agent kind itself.
+readopt() {
+  shopt -s nullglob
+  for f in "$(panes_dir)"/*; do
+    local pane task
+    pane="$(basename "$f")"
+    task="$(cat "$f" 2>/dev/null)"
+    if pane_alive "$pane"; then
+      report_state "$pane" "idle" "$task"
+      "$HERDR" pane report-metadata "$pane" --source "$SOURCE_ID" --agent "$AGENT_LABEL" \
+        --display-agent "Bob" --seq "$(next_seq)" >/dev/null 2>&1
+      log "re-adopted pane $pane (task ${task:-none})"
+    else
+      forget_pane "$pane"
+      [ -n "$task" ] && log "pane $pane gone; resume it with: bob chat --resume $task"
+    fi
+  done
+  shopt -u nullglob
+}
+
+case "${1:-status}" in
+  start)
+    mkdir -p "$(state_root)" "$(panes_dir)" "$(state_root)/heartbeat"
+    readopt
+    if running; then echo "herdr-bob: watcher already running (pid $(cat "$PIDFILE"))"; exit 0; fi
+    setsid nohup bash "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    echo $! > "$PIDFILE"
+    disown 2>/dev/null || true
+    echo "herdr-bob: watcher started (pid $(cat "$PIDFILE"))"
+    ;;
+  stop)
+    if running; then kill "$(cat "$PIDFILE")" 2>/dev/null; echo "herdr-bob: watcher stopped"
+    else echo "herdr-bob: watcher not running"; fi
+    rm -f "$PIDFILE"
+    ;;
+  reap)
+    # Cheap: only drop panes that have actually gone.
+    shopt -s nullglob
+    for f in "$(panes_dir)"/*; do
+      pane="$(basename "$f")"
+      pane_alive "$pane" || { release_agent "$pane"; forget_pane "$pane"; log "reaped $pane"; }
+    done
+    shopt -u nullglob
+    ;;
+  status)
+    if running; then echo "watcher:  running (pid $(cat "$PIDFILE"))"; else echo "watcher:  stopped"; fi
+    echo "state:    $(state_root)"
+    echo "config:   $(config_root)"
+    if command -v bob >/dev/null 2>&1; then echo "bob:      $(command -v bob) ($(bob --version 2>/dev/null | head -1))"
+    else echo "bob:      NOT on PATH"; fi
+    settings="${BOB_HOME:-$HOME/.bob}/settings/settings.json"
+    if [ -e "$settings" ] && command -v jq >/dev/null 2>&1 &&
+       jq -e --arg m "$ROOT/bin/bob-hook" '[.hooks // {} | .[][]? | .hooks[]? | select((.command // "") | contains($m))] | length > 0' "$settings" >/dev/null 2>&1; then
+      echo "hooks:    installed in $settings"
+    else
+      echo "hooks:    NOT installed (run the install-hook action)"
+    fi
+    echo "panes:"
+    shopt -s nullglob
+    found=0
+    for f in "$(panes_dir)"/*; do
+      found=1; printf '  %s  task=%s\n' "$(basename "$f")" "$(cat "$f" 2>/dev/null || echo none)"
+    done
+    [ "$found" = 0 ] && echo "  (none registered)"
+    shopt -u nullglob
+    ;;
+  *) echo "usage: bob-watchctl start|stop|status|reap" >&2; exit 2 ;;
+esac

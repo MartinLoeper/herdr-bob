@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Remove exactly the entries bin/bob-install-hook added, leaving the user's own
+# hooks and every other setting alone.
+set -uo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/common.sh"
+
+BOB_HOME="${BOB_HOME:-$HOME/.bob}"
+SETTINGS="$BOB_HOME/settings/settings.json"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MARKER="$ROOT/bin/bob-hook"
+
+command -v jq >/dev/null 2>&1 || { echo "herdr-bob: jq is required" >&2; exit 1; }
+[ -e "$SETTINGS" ] || { echo "herdr-bob: no $SETTINGS, nothing to do"; exit 0; }
+jq -e . "$SETTINGS" >/dev/null 2>&1 || { echo "herdr-bob: $SETTINGS is not valid JSON; refusing to touch it" >&2; exit 1; }
+
+tmp="$SETTINGS.herdr-bob.tmp.$$"
+jq --arg marker "$MARKER" '
+  def ours: ((.command // "") | contains($marker));
+  if .hooks == null then .
+  else .hooks |= with_entries(
+         .value |= ( map(.hooks |= map(select(ours | not)))
+                   | map(select((.hooks | length) > 0)) ))
+       | .hooks |= with_entries(select((.value | length) > 0))
+       | if (.hooks | length) == 0 then del(.hooks) else . end
+  end
+' "$SETTINGS" > "$tmp" || { rm -f "$tmp"; echo "herdr-bob: failed to update settings" >&2; exit 1; }
+
+mv "$tmp" "$SETTINGS"
+echo "herdr-bob: hooks removed from $SETTINGS"
+log "uninstall-hook -> $SETTINGS"
