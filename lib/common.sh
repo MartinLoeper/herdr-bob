@@ -55,10 +55,22 @@ pane_file()    { printf '%s/panes/%s' "$(state_root)" "$1"; }
 beat_file()    { printf '%s/heartbeat/%s' "$(state_root)" "$1"; }
 HEARTBEAT_TTL=90
 
+# Modification time in epoch seconds, or 0. GNU coreutils and BSD/darwin `stat`
+# share no spelling for it, and the two cannot be probed in either order: on
+# GNU, `stat -f %m` is a *filesystem* query that succeeds and prints a mount
+# point, so it may only run after `-c` has failed -- and the answer is checked
+# for digits before any arithmetic sees it.
+file_mtime() { # path
+  local m
+  m="$(stat -c %Y "$1" 2>/dev/null)" || m="$(stat -f %m "$1" 2>/dev/null)" || m=0
+  case "$m" in ''|*[!0-9]*) m=0 ;; esac
+  printf '%s' "$m"
+}
+
 log() {
   local d; d="$(state_root)"
   mkdir -p "$d" 2>/dev/null || return 0
-  printf '%s %s\n' "$(date -Is)" "$*" >> "$d/herdr-bob.log" 2>/dev/null || true
+  printf '%s %s\n' "$(date -Iseconds)" "$*" >> "$d/herdr-bob.log" 2>/dev/null || true
   # Keep the log from growing without bound; cheap and good enough.
   local n; n=$(wc -l < "$d/herdr-bob.log" 2>/dev/null || echo 0)
   if [ "${n:-0}" -gt 2000 ]; then

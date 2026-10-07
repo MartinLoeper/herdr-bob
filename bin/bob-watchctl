@@ -46,7 +46,21 @@ case "${1:-status}" in
     write_hook_launcher "$ROOT" || log "could not refresh hook launcher"
     readopt
     if running; then echo "herdr-bob: watcher already running (pid $(cat "$PIDFILE"))"; exit 0; fi
-    setsid nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    # setsid(1) is util-linux and does not exist on darwin, where this arm
+    # exited 127 and `echo $!` then recorded the dead subshell -- and since the
+    # only caller is a one-shot [[startup]] hook that nothing retries, the
+    # watcher never ran at all. perl's POSIX::setsid is in the darwin base
+    # system and gives a real new session, with the pid preserved across exec.
+    # The last arm is the old behaviour: it survives SIGHUP, but not a kill of
+    # the startup hook's process group.
+    if command -v setsid >/dev/null 2>&1; then
+      setsid nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    elif command -v perl >/dev/null 2>&1; then
+      nohup perl -MPOSIX -e 'setsid(); exec @ARGV or die "exec: $!"' \
+        "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    else
+      nohup "$HERDR_BOB_BASH" "$ROOT/bin/bob-watch" >/dev/null 2>&1 &
+    fi
     echo $! > "$PIDFILE"
     disown 2>/dev/null || true
     echo "herdr-bob: watcher started (pid $(cat "$PIDFILE"))"
