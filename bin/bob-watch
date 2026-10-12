@@ -23,7 +23,26 @@ mkdir -p "$(config_root)" "$(panes_dir)" "$(state_root)/heartbeat" 2>/dev/null
 [ -e "$RULES" ] || cp "$ROOT/rules.json" "$RULES" 2>/dev/null
 [ -e "$RULES" ] || RULES="$ROOT/rules.json"
 
-declare -A last_state=()
+# The panes last reported `blocked`, as a space-delimited set. This was an
+# associative array, which costs nothing on bash 4 and everything on bash 3.2 --
+# the only bash a stock darwin has, and the one `command -v bash` resolves to
+# there. On 3.2 `declare -A` is an invalid option and a string subscript is
+# evaluated as arithmetic, so under `set -u` the first READ of last_state[$pane]
+# is an unbound variable and this process exits -- at the first screen read of
+# the first registered pane, with its stderr on /dev/null and no log line, and
+# with whatever status the previous command left (0 in a bare reproduction, 1
+# in the loop below), so no caller can tell it from a clean stop.
+# A set is all this ever held: the only values ever assigned were "blocked"
+# and "". herdr pane ids (`w2KJ:p1`) contain no whitespace, which is what makes
+# the delimiter safe.
+blocked_panes=" "
+is_blocked()    { case "$blocked_panes" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+mark_blocked()  { is_blocked "$1" || blocked_panes="$blocked_panes$1 "; }
+clear_blocked() {
+  local out=" " p
+  for p in $blocked_panes; do [ "$p" = "$1" ] || out="$out$p "; done
+  blocked_panes="$out"
+}
 
 # Bob only fires SessionStart on the first prompt, so a freshly launched
 # `bob chat` is invisible to Herdr until the user says something. Claim such
@@ -72,7 +91,7 @@ adopt_unclaimed() {
 heartbeat_fresh() { # pane
   local f; f="$(beat_file "$1")"
   [ -e "$f" ] || return 1
-  local age=$(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) ))
+  local age=$(( $(date +%s) - $(file_mtime "$f") ))
   [ "$age" -lt "$HEARTBEAT_TTL" ]
 }
 
@@ -128,7 +147,7 @@ while :; do
 
     if ! pane_alive "$pane"; then
       release_agent "$pane"; forget_pane "$pane"
-      unset "last_state[$pane]"
+      clear_blocked "$pane"
       log "pane $pane gone -> released"
       continue
     fi
@@ -138,15 +157,15 @@ while :; do
     [ -n "$screen" ] || continue
 
     if rule="$(match_rules "$screen")"; then
-      if [ "${last_state[$pane]:-}" != "blocked" ]; then
+      if ! is_blocked "$pane"; then
         report_state "$pane" "blocked" "" "Bob is waiting for input ($rule)"
-        last_state[$pane]="blocked"
+        mark_blocked "$pane"
         log "pane $pane -> blocked ($rule)"
       fi
-    elif [ "${last_state[$pane]:-}" = "blocked" ]; then
+    elif is_blocked "$pane"; then
       # The prompt cleared. Hand authority back: if the hook is live it will set
       # the real state on its next event; otherwise fall back to idle.
-      last_state[$pane]=""
+      clear_blocked "$pane"
       if ! heartbeat_fresh "$pane"; then
         report_state "$pane" "idle"
         log "pane $pane -> idle (block cleared, no live hook)"
