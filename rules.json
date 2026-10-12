@@ -7,20 +7,42 @@
     "Keep them strict: an unmatched screen falls back to the hook's state, which",
     "is safe; a false `blocked` stops waits and lights up the sidebar wrongly.",
     "`all` entries must every one match; `any` needs one; `none` must not match.",
-    "Patterns are POSIX extended regexes, matched case-insensitively."
+    "Patterns are POSIX extended regexes, matched case-insensitively, one line",
+    "at a time: two patterns that cannot share a line are a two-line anchor.",
+    "Key a dialog on its own heading and its own option, not on a footer that",
+    "another dialog may share. No bracket expression may hold a multibyte",
+    "character: under LC_ALL=C, BSD grep reads `[>❯→]` byte-wise and the class",
+    "matches any box-drawing line. Use alternation, `(>|❯|→)`."
   ],
   "rules": [
+    {
+      "id": "bob_execute_command",
+      "state": "blocked",
+      "all": [
+        "^[[:space:]]*Execute Command[[:space:]]*$",
+        "^[[:space:]]*(>|❯|→)?[[:space:]]*Approve Once[[:space:]]*$"
+      ],
+      "none": ["esc to interrupt"]
+    },
+    {
+      "id": "bob_signin",
+      "state": "blocked",
+      "all": [
+        "Complete sign[- ]?in in your browser",
+        "Press (ESC|Escape) or Ctrl\\+C to exit"
+      ]
+    },
     {
       "id": "tool_approval_prompt",
       "state": "blocked",
       "all": ["(allow|approve|permission|run this command|wants to)"],
-      "any": ["\\(y(es)?/n(o)?\\)", "[[:space:]]*[>❯][[:space:]]*(yes|allow|approve)", "esc to (cancel|reject)"],
+      "any": ["\\(y(es)?/n(o)?\\)", "[[:space:]]*(>|❯|→)[[:space:]]*(yes|allow|approve)", "esc to (cancel|reject)"],
       "none": ["esc to interrupt"]
     },
     {
       "id": "trust_folder_prompt",
       "state": "blocked",
-      "all": ["(trust|do you trust)"],
+      "all": ["(do you trust|trust this (folder|workspace|directory))"],
       "any": ["this (folder|workspace|directory)", "\\(y(es)?/n(o)?\\)"]
     },
     {
@@ -32,8 +54,8 @@
     {
       "id": "sso_login_prompt",
       "state": "blocked",
-      "all": ["(sign in|log in|login|authenticate)"],
-      "any": ["browser", "https?://", "press enter"]
+      "all": ["(sign[- ]?in|log[- ]?in|login|authenticate)"],
+      "any": ["browser", "https?://"]
     }
   ]
 }
